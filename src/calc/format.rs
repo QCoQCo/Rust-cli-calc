@@ -44,3 +44,61 @@ pub fn format_result(value: f64) -> String {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::format_result;
+
+    // 출력 문자열을 다시 파싱했을 때 원래 값과 (상대오차 기준으로) 같아야 함
+    fn assert_round_trip(value: f64) {
+        let formatted = format_result(value);
+        let parsed: f64 = formatted
+            .parse()
+            .unwrap_or_else(|_| panic!("{} formatted as unparseable `{}`", value, formatted));
+        let tolerance = value.abs() * 1e-9;
+        assert!(
+            (parsed - value).abs() <= tolerance,
+            "{} formatted as `{}`",
+            value,
+            formatted
+        );
+    }
+
+    #[test]
+    fn integers() {
+        assert_eq!(format_result(4.0), "4");
+        assert_eq!(format_result(-10.0), "-10");
+        assert_eq!(format_result(0.0), "0");
+        assert_eq!(format_result(-0.0), "0");
+    }
+
+    #[test]
+    fn decimals() {
+        assert_eq!(format_result(2.5), "2.5");
+        assert_eq!(format_result(-0.25), "-0.25");
+        assert_eq!(format_result(10.0 / 3.0), "3.3333333333");
+    }
+
+    #[test]
+    fn floating_point_noise_is_removed() {
+        assert_eq!(format_result(0.1 + 0.2), "0.3");
+        assert_eq!(format_result(1.1 * 3.0), "3.3");
+    }
+
+    // B3: i64 범위를 넘는 큰 수
+    #[test]
+    fn large_numbers() {
+        assert_round_trip(1e20);
+        assert_round_trip(-1e20);
+        assert_round_trip(1.5e300);
+        assert_ne!(format_result(1e20), i64::MAX.to_string());
+    }
+
+    // B6: 아주 작은 수가 0으로 사라지면 안 됨
+    #[test]
+    fn small_numbers() {
+        assert_round_trip(1e-11);
+        assert_round_trip(-1e-11);
+        assert_round_trip(1.5e-20);
+    }
+}

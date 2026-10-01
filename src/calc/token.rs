@@ -130,3 +130,49 @@ where
         Ok(num_str)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{tokenize, Token};
+
+    #[test]
+    fn numbers() {
+        let tokens = tokenize("12.5 + .5").unwrap();
+        assert!(matches!(
+            tokens.as_slice(),
+            [Token::Number(a), Token::Plus, Token::Number(b)] if *a == 12.5 && *b == 0.5
+        ));
+    }
+
+    #[test]
+    fn operators_and_functions() {
+        let tokens = tokenize("sqrt(4) - 2 * 3 / 1 % 2 ^ 2").unwrap();
+        assert!(matches!(
+            tokens.as_slice(),
+            [
+                Token::Sqrt,
+                Token::LParen,
+                Token::Number(_),
+                Token::RParen,
+                Token::Minus,
+                Token::Number(_),
+                Token::Multiply,
+                Token::Number(_),
+                Token::Divide,
+                Token::Number(_),
+                Token::Modulo,
+                Token::Number(_),
+                Token::Power,
+                Token::Number(_),
+            ]
+        ));
+    }
+
+    #[test]
+    fn invalid_input() {
+        assert_eq!(tokenize("1.").err(), Some("Number cannot end with '.'"));
+        assert_eq!(tokenize("1 & 2").err(), Some("Invalid character in expression"));
+        assert_eq!(tokenize("foo(1)").err(), Some("Unknown function"));
+        assert_eq!(tokenize("()").err(), Some("Expression must contain at least one number"));
+    }
+}
