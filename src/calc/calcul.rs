@@ -1,12 +1,13 @@
 use super::token::{tokenize, Token};
 use super::parser::Parser;
 
-pub fn evl_ex(expression: &str) -> Result<f64, &'static str> {
+/// `ans`는 `last_result` 값으로 평가됨
+pub fn evl_ex(expression: &str, last_result: Option<f64>) -> Result<f64, &'static str> {
     let tokens = tokenize(expression)?;
     if tokens.is_empty() {
         return Err("Empty expression");
     }
-    let mut parser = Parser::new(tokens);
+    let mut parser = Parser::new(tokens, last_result);
     let result = parser.parse_expression()?;
     
     // 모든 토큰이 소비되었는지 확인
@@ -22,7 +23,7 @@ mod tests {
     use super::evl_ex;
 
     fn assert_eval(expression: &str, expected: f64) {
-        let result = evl_ex(expression)
+        let result = evl_ex(expression, None)
             .unwrap_or_else(|e| panic!("`{}` failed: {}", expression, e));
         assert!(
             (result - expected).abs() < 1e-9,
@@ -34,7 +35,7 @@ mod tests {
     }
 
     fn assert_eval_err(expression: &str) {
-        let result = evl_ex(expression);
+        let result = evl_ex(expression, None);
         assert!(result.is_err(), "`{}` should fail, got {:?}", expression, result);
     }
 
@@ -90,9 +91,9 @@ mod tests {
 
     #[test]
     fn division_by_zero() {
-        assert_eq!(evl_ex("1 / 0"), Err("Cannot divide by ZERO"));
-        assert_eq!(evl_ex("1 % 0"), Err("Cannot divide by ZERO"));
-        assert_eq!(evl_ex("1 / (2 - 2)"), Err("Cannot divide by ZERO"));
+        assert_eq!(evl_ex("1 / 0", None), Err("Cannot divide by ZERO"));
+        assert_eq!(evl_ex("1 % 0", None), Err("Cannot divide by ZERO"));
+        assert_eq!(evl_ex("1 / (2 - 2)", None), Err("Cannot divide by ZERO"));
     }
 
     #[test]
@@ -105,6 +106,22 @@ mod tests {
         assert_eval_err("sqrt 4");
         assert_eval_err("sqrt(-1)");
         assert_eval_err("foo(1)");
+    }
+
+    // B4: ans는 이전 결과 값을 그대로 사용
+    #[test]
+    fn ans_uses_last_result() {
+        assert_eq!(evl_ex("ans * 2", Some(15.0)), Ok(30.0));
+        assert_eq!(evl_ex("ans * 3", Some(1.0 / 3.0)), Ok(1.0));
+        assert_eq!(evl_ex("ans^2", Some(-3.0)), Ok(9.0));
+        assert_eq!(evl_ex("-ans", Some(-3.0)), Ok(3.0));
+        assert_eq!(evl_ex("sqrt(ans)", Some(16.0)), Ok(4.0));
+    }
+
+    #[test]
+    fn ans_without_previous_result() {
+        assert_eq!(evl_ex("ans + 1", None), Err("No previous result for 'ans'"));
+        assert_eq!(evl_ex("1 + 1", Some(5.0)), Ok(2.0));
     }
 
     // B5: 결과가 유한한 수가 아니면 에러

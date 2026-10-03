@@ -3,11 +3,12 @@ use super::token::Token;
 pub struct Parser {
     tokens: Vec<Token>,
     current: usize,
+    ans: Option<f64>,
 }
 
 impl Parser {
-    pub fn new(tokens: Vec<Token>) -> Self {
-        Self { tokens, current: 0 }
+    pub fn new(tokens: Vec<Token>, ans: Option<f64>) -> Self {
+        Self { tokens, current: 0, ans }
     }
 
     pub fn peek(&self) -> Token {
@@ -45,19 +46,19 @@ impl Parser {
         Ok(result)
     }
 
-    // term: power (('*' | '/' | '%') power)*
+    // term: unary (('*' | '/' | '%') unary)*
     fn parse_term(&mut self) -> Result<f64, &'static str> {
-        let mut result = self.parse_power()?;
+        let mut result = self.parse_unary()?;
 
         loop {
             match self.peek() {
                 Token::Multiply => {
                     self.advance();
-                    result *= self.parse_power()?;
+                    result *= self.parse_unary()?;
                 }
                 Token::Divide => {
                     self.advance();
-                    let divisor = self.parse_power()?;
+                    let divisor = self.parse_unary()?;
                     if divisor == 0.0 {
                         return Err("Cannot divide by ZERO");
                     }
@@ -65,7 +66,7 @@ impl Parser {
                 }
                 Token::Modulo => {
                     self.advance();
-                    let divisor = self.parse_power()?;
+                    let divisor = self.parse_unary()?;
                     if divisor == 0.0 {
                         return Err("Cannot divide by ZERO");
                     }
@@ -78,35 +79,45 @@ impl Parser {
         Ok(result)
     }
 
-    // power: factor ('^' power)* (우측 결합)
+    // unary: ('-' | '+') unary | power
+    // 단항 연산자는 '^'보다 우선순위가 낮음: -2^2 = -(2^2)
+    fn parse_unary(&mut self) -> Result<f64, &'static str> {
+        match self.peek() {
+            Token::Minus => {
+                self.advance(); // consume '-'
+                Ok(-self.parse_unary()?)
+            }
+            Token::Plus => {
+                self.advance(); // consume '+'
+                self.parse_unary()
+            }
+            _ => self.parse_power(),
+        }
+    }
+
+    // power: factor ('^' unary)? (우측 결합, 지수에 단항 연산자 허용: 2^-1)
     fn parse_power(&mut self) -> Result<f64, &'static str> {
         let mut result = self.parse_factor()?;
 
         if matches!(self.peek(), Token::Power) {
             self.advance(); // consume '^'
-            let exponent = self.parse_power()?; // 우측 결합이므로 재귀 호출
+            let exponent = self.parse_unary()?; // 우측 결합이므로 재귀 호출
             result = result.powf(exponent);
         }
 
         Ok(result)
     }
 
-    // factor: number | '-' factor | '+' factor | function '(' expression ')' | '(' expression ')'
+    // factor: number | 'ans' | function '(' expression ')' | '(' expression ')'
     fn parse_factor(&mut self) -> Result<f64, &'static str> {
         match self.peek() {
             Token::Number(n) => {
                 self.advance();
                 Ok(n)
             }
-            Token::Minus => {
-                // 단항 마이너스 처리
-                self.advance(); // consume '-'
-                Ok(-self.parse_factor()?)
-            }
-            Token::Plus => {
-                // 단항 플러스 처리 (선택적)
-                self.advance(); // consume '+'
-                self.parse_factor()
+            Token::Ans => {
+                self.advance();
+                self.ans.ok_or("No previous result for 'ans'")
             }
             Token::Sqrt => {
                 // sqrt 함수 처리
@@ -144,7 +155,7 @@ impl Parser {
             }
             Token::RParen => Err("Unexpected ')' - no matching '('"),
             Token::EOF => Err("Unexpected end of expression"),
-            _ => Err("Expected number, '-', '+', 'sqrt', or '('"),
+            _ => Err("Expected number, '-', '+', 'ans', 'sqrt', or '('"),
         }
     }
 }

@@ -72,7 +72,18 @@ fn main() {
         io::stdout().flush().unwrap();
 
         let mut input = String::new();
-        io::stdin().read_line(&mut input).expect("Failed to read line");
+        // EOF(Ctrl-D)이면 종료
+        match io::stdin().read_line(&mut input) {
+            Ok(0) => {
+                println!();
+                break;
+            }
+            Ok(_) => {}
+            Err(e) => {
+                eprintln!("Failed to read line: {}", e);
+                break;
+            }
+        }
 
         let input = input.trim();
 
@@ -101,14 +112,7 @@ fn main() {
             _ => {}
         }
 
-        // ans를 마지막 결과로 치환
-        let expression = if let Some(last) = calc.last_result {
-            input.replace("ans", &calc::format_result(last))
-        } else {
-            input.to_string()
-        };
-
-        match calc::evl_ex(&expression) {
+        match calc::evl_ex(input, calc.last_result) {
             Ok(result) => {
                 let formatted = calc::format_result(result);
                 println!("Result: {}", formatted);

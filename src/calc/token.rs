@@ -8,6 +8,7 @@ pub enum Token {
     Modulo,
     Power,
     Sqrt,
+    Ans,
     LParen,
     RParen,
     EOF,
@@ -30,10 +31,14 @@ pub fn tokenize(expression: &str) -> Result<Vec<Token>, &'static str> {
             tokens.push(Token::Number(num));
             has_number = true;
         } else if ch.is_ascii_alphabetic() {
-            // 함수 이름 파싱 (예: sqrt)
-            let func_name = parse_identifier(&mut chars)?;
-            match func_name.as_str() {
+            // 식별자 파싱 (예: sqrt, ans)
+            let ident = parse_identifier(&mut chars)?;
+            match ident.as_str() {
                 "sqrt" => tokens.push(Token::Sqrt),
+                "ans" => {
+                    tokens.push(Token::Ans);
+                    has_number = true;
+                }
                 _ => return Err("Unknown function"),
             }
         } else {
