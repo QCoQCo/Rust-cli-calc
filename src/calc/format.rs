@@ -1,9 +1,13 @@
 /// 부동소수점 정밀도 문제를 처리하고 결과를 깔끔하게 포맷팅
 pub fn format_result(value: f64) -> String {
-    // 부동소수점 오차 처리 (예: 0.1 + 0.2 = 0.30000000000000004)
-    // 매우 작은 오차는 반올림하여 제거
-    const EPSILON: f64 = 1e-10;
-    
+    // 이 범위를 벗어나면 지수 표기 (예: 1e20, 1e-11)
+    const SCI_UPPER: f64 = 1e15;
+    const SCI_LOWER: f64 = 1e-6;
+    // 소수점 이하 최대 자릿수
+    const MAX_DECIMALS: i32 = 10;
+    // 표시할 최대 유효숫자 (f64는 약 15~17자리까지 정확)
+    const MAX_DIGITS: i32 = 15;
+
     // 무한대나 NaN 체크
     if value.is_infinite() {
         return if value.is_sign_positive() {
@@ -15,33 +19,35 @@ pub fn format_result(value: f64) -> String {
     if value.is_nan() {
         return "NaN".to_string();
     }
-    
-    // 정수인지 확인 (소수점 오차 고려)
-    let rounded = (value * 1e10).round() / 1e10;
-    if (rounded - rounded.round()).abs() < EPSILON {
-        // 정수로 표시
-        format!("{}", rounded.round() as i64)
+    if value == 0.0 {
+        return "0".to_string(); // -0.0 포함
+    }
+
+    let abs = value.abs();
+    if !(SCI_LOWER..SCI_UPPER).contains(&abs) {
+        // 가수부를 반올림한 뒤 불필요한 0 제거 (1.5000000000e20 → 1.5e20)
+        let formatted = format!("{:.*e}", MAX_DECIMALS as usize, value);
+        let (mantissa, exponent) = formatted.split_once('e').unwrap();
+        return format!("{}e{}", trim_decimal(mantissa), exponent);
+    }
+
+    // 정수부가 길면 소수 자릿수를 줄여 유효숫자 밖의 오차가 보이지 않게 함
+    // (예: 0.1 + 0.2 = 0.30000000000000004 → 0.3)
+    let int_digits = if abs >= 1.0 { abs.log10().floor() as i32 + 1 } else { 1 };
+    let decimals = (MAX_DIGITS - int_digits).clamp(0, MAX_DECIMALS) as usize;
+    let formatted = format!("{:.*}", decimals, value);
+    match trim_decimal(&formatted) {
+        "-0" => "0".to_string(),
+        trimmed => trimmed.to_string(),
+    }
+}
+
+/// 소수점 이하의 끝자리 0과, 남은 소수점을 제거
+fn trim_decimal(s: &str) -> &str {
+    if s.contains('.') {
+        s.trim_end_matches('0').trim_end_matches('.')
     } else {
-        // 소수점이 있는 경우, 불필요한 0 제거
-        let formatted = format!("{:.15}", rounded);
-        let trimmed = formatted.trim_end_matches('0').trim_end_matches('.');
-        
-        // 최대 10자리 소수점까지만 표시 (불필요한 정밀도 제거)
-        if trimmed.contains('.') {
-            let parts: Vec<&str> = trimmed.split('.').collect();
-            if parts.len() == 2 {
-                let decimal = parts[1];
-                if decimal.len() > 10 {
-                    format!("{:.10}", rounded).trim_end_matches('0').trim_end_matches('.').to_string()
-                } else {
-                    trimmed.to_string()
-                }
-            } else {
-                trimmed.to_string()
-            }
-        } else {
-            trimmed.to_string()
-        }
+        s
     }
 }
 
@@ -92,6 +98,17 @@ mod tests {
         assert_round_trip(-1e20);
         assert_round_trip(1.5e300);
         assert_ne!(format_result(1e20), i64::MAX.to_string());
+    }
+
+    #[test]
+    fn scientific_notation_boundaries() {
+        assert_eq!(format_result(1e20), "1e20");
+        assert_eq!(format_result(-1.5e20), "-1.5e20");
+        assert_eq!(format_result(1e15), "1e15");
+        assert_eq!(format_result(123456789012345.0), "123456789012345");
+        assert_eq!(format_result(0.000001), "0.000001");
+        assert_eq!(format_result(1e-11), "1e-11");
+        assert_eq!(format_result(2.5e-7), "2.5e-7");
     }
 
     // B6: 아주 작은 수가 0으로 사라지면 안 됨

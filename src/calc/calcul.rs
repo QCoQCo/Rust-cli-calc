@@ -14,7 +14,12 @@ pub fn evl_ex(expression: &str, last_result: Option<f64>) -> Result<f64, &'stati
     if !matches!(parser.peek(), Token::EOF) {
         return Err("Unexpected token after expression");
     }
-    
+
+    // 오버플로(inf)나 정의되지 않는 연산(NaN) 결과는 에러로 처리
+    if !result.is_finite() {
+        return Err("Result is not a finite number");
+    }
+
     Ok(result)
 }
 
