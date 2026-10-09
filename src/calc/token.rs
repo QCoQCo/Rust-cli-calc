@@ -11,10 +11,12 @@ pub enum Token {
     Ans,
     LParen,
     RParen,
-    EOF,
+    Eof,
 }
 
-pub fn tokenize(expression: &str) -> Result<Vec<Token>, &'static str> {
+use super::error::CalcError;
+
+pub fn tokenize(expression: &str) -> Result<Vec<Token>, CalcError> {
     let mut tokens = Vec::new();
     let mut chars = expression.chars().peekable();
     let mut has_number = false;
@@ -27,19 +29,19 @@ pub fn tokenize(expression: &str) -> Result<Vec<Token>, &'static str> {
 
         if ch.is_ascii_digit() || ch == '.' {
             let num_str = parse_number(&mut chars)?;
-            let num = num_str.parse::<f64>().map_err(|_| "Invalid number")?;
+            let num = num_str.parse::<f64>().map_err(|_| CalcError::InvalidNumber(num_str.clone()))?;
             tokens.push(Token::Number(num));
             has_number = true;
         } else if ch.is_ascii_alphabetic() {
             // 식별자 파싱 (예: sqrt, ans)
-            let ident = parse_identifier(&mut chars)?;
+            let ident = parse_identifier(&mut chars);
             match ident.as_str() {
                 "sqrt" => tokens.push(Token::Sqrt),
                 "ans" => {
                     tokens.push(Token::Ans);
                     has_number = true;
                 }
-                _ => return Err("Unknown function"),
+                _ => return Err(CalcError::UnknownFunction(ident)),
             }
         } else {
             match ch {
@@ -75,19 +77,25 @@ pub fn tokenize(expression: &str) -> Result<Vec<Token>, &'static str> {
                     tokens.push(Token::RParen);
                     chars.next();
                 }
-                _ => return Err("Invalid character in expression"),
+                _ => return Err(CalcError::InvalidCharacter(ch)),
             }
         }
     }
 
     if !has_number {
-        return Err("Expression must contain at least one number");
+        return Err(CalcError::NoNumber);
     }
 
     Ok(tokens)
 }
 
-fn parse_identifier<I>(chars: &mut std::iter::Peekable<I>) -> Result<String, &'static str>
+/// 표현식이 `ans`를 참조하는지 확인
+pub fn uses_ans(expression: &str) -> bool {
+    tokenize(expression).is_ok_and(|tokens| tokens.iter().any(|t| matches!(t, Token::Ans)))
+}
+
+// 호출 전에 첫 글자가 알파벳임을 확인하므로 결과는 비어 있지 않음
+fn parse_identifier<I>(chars: &mut std::iter::Peekable<I>) -> String
 where
     I: Iterator<Item = char>,
 {
@@ -100,14 +108,11 @@ where
             break;
         }
     }
-    if ident.is_empty() {
-        Err("Expected identifier")
-    } else {
-        Ok(ident)
-    }
+    ident
 }
 
-fn parse_number<I>(chars: &mut std::iter::Peekable<I>) -> Result<String, &'static str>
+// 호출 전에 첫 글자가 숫자나 '.'임을 확인하므로 결과는 비어 있지 않음
+fn parse_number<I>(chars: &mut std::iter::Peekable<I>) -> Result<String, CalcError>
 where
     I: Iterator<Item = char>,
 {
@@ -127,10 +132,8 @@ where
         }
     }
 
-    if num_str.is_empty() {
-        Err("Expected number")
-    } else if num_str.ends_with('.') {
-        Err("Number cannot end with '.'")
+    if num_str.ends_with('.') {
+        Err(CalcError::TrailingDot)
     } else {
         Ok(num_str)
     }
@@ -138,7 +141,8 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::{tokenize, Token};
+    use super::{tokenize, uses_ans, Token};
+    use crate::calc::error::CalcError;
 
     #[test]
     fn numbers() {
@@ -175,9 +179,18 @@ mod tests {
 
     #[test]
     fn invalid_input() {
-        assert_eq!(tokenize("1.").err(), Some("Number cannot end with '.'"));
-        assert_eq!(tokenize("1 & 2").err(), Some("Invalid character in expression"));
-        assert_eq!(tokenize("foo(1)").err(), Some("Unknown function"));
-        assert_eq!(tokenize("()").err(), Some("Expression must contain at least one number"));
+        assert_eq!(tokenize("1.").err(), Some(CalcError::TrailingDot));
+        assert_eq!(tokenize(".").err(), Some(CalcError::TrailingDot));
+        assert_eq!(tokenize("1 & 2").err(), Some(CalcError::InvalidCharacter('&')));
+        assert_eq!(tokenize("foo(1)").err(), Some(CalcError::UnknownFunction("foo".to_string())));
+        assert_eq!(tokenize("()").err(), Some(CalcError::NoNumber));
+    }
+
+    #[test]
+    fn detects_ans() {
+        assert!(uses_ans("ans * 2"));
+        assert!(uses_ans("sqrt(ans)"));
+        assert!(!uses_ans("2 * 3"));
+        assert!(!uses_ans("answer"));
     }
 }

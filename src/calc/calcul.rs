@@ -1,23 +1,21 @@
 use super::token::{tokenize, Token};
+use super::error::CalcError;
 use super::parser::Parser;
 
 /// `ans`는 `last_result` 값으로 평가됨
-pub fn evl_ex(expression: &str, last_result: Option<f64>) -> Result<f64, &'static str> {
+pub fn evl_ex(expression: &str, last_result: Option<f64>) -> Result<f64, CalcError> {
     let tokens = tokenize(expression)?;
-    if tokens.is_empty() {
-        return Err("Empty expression");
-    }
     let mut parser = Parser::new(tokens, last_result);
     let result = parser.parse_expression()?;
     
     // 모든 토큰이 소비되었는지 확인
-    if !matches!(parser.peek(), Token::EOF) {
-        return Err("Unexpected token after expression");
+    if !matches!(parser.peek(), Token::Eof) {
+        return Err(CalcError::TrailingInput);
     }
 
     // 오버플로(inf)나 정의되지 않는 연산(NaN) 결과는 에러로 처리
     if !result.is_finite() {
-        return Err("Result is not a finite number");
+        return Err(CalcError::NonFiniteResult);
     }
 
     Ok(result)
@@ -26,6 +24,7 @@ pub fn evl_ex(expression: &str, last_result: Option<f64>) -> Result<f64, &'stati
 #[cfg(test)]
 mod tests {
     use super::evl_ex;
+    use crate::calc::error::CalcError;
 
     fn assert_eval(expression: &str, expected: f64) {
         let result = evl_ex(expression, None)
@@ -39,9 +38,8 @@ mod tests {
         );
     }
 
-    fn assert_eval_err(expression: &str) {
-        let result = evl_ex(expression, None);
-        assert!(result.is_err(), "`{}` should fail, got {:?}", expression, result);
+    fn assert_eval_err(expression: &str, expected: CalcError) {
+        assert_eq!(evl_ex(expression, None), Err(expected), "`{}`", expression);
     }
 
     // 기본 연산 (README 예시)
@@ -96,21 +94,26 @@ mod tests {
 
     #[test]
     fn division_by_zero() {
-        assert_eq!(evl_ex("1 / 0", None), Err("Cannot divide by ZERO"));
-        assert_eq!(evl_ex("1 % 0", None), Err("Cannot divide by ZERO"));
-        assert_eq!(evl_ex("1 / (2 - 2)", None), Err("Cannot divide by ZERO"));
+        assert_eq!(evl_ex("1 / 0", None), Err(CalcError::DivisionByZero));
+        assert_eq!(evl_ex("1 % 0", None), Err(CalcError::DivisionByZero));
+        assert_eq!(evl_ex("1 / (2 - 2)", None), Err(CalcError::DivisionByZero));
     }
 
     #[test]
     fn syntax_errors() {
-        assert_eval_err("");
-        assert_eval_err("2 +");
-        assert_eval_err("(2 + 3");
-        assert_eval_err("2 + 3)");
-        assert_eval_err("2 3");
-        assert_eval_err("sqrt 4");
-        assert_eval_err("sqrt(-1)");
-        assert_eval_err("foo(1)");
+        assert_eval_err("", CalcError::NoNumber);
+        assert_eval_err("2 +", CalcError::UnexpectedEnd);
+        assert_eval_err("2 * * 3", CalcError::ExpectedOperand);
+        assert_eval_err("(2 + 3", CalcError::UnclosedParen);
+        assert_eval_err("2 + 3)", CalcError::TrailingInput);
+        assert_eval_err("())", CalcError::NoNumber);
+        assert_eval_err("(1))", CalcError::TrailingInput);
+        assert_eval_err("1 + )", CalcError::UnmatchedRParen);
+        assert_eval_err("2 3", CalcError::UnexpectedToken);
+        assert_eval_err("sqrt 4", CalcError::ExpectedLParenAfterSqrt);
+        assert_eval_err("sqrt(-1)", CalcError::NegativeSqrt);
+        assert_eval_err("foo(1)", CalcError::UnknownFunction("foo".to_string()));
+        assert_eval_err("1 $ 2", CalcError::InvalidCharacter('$'));
     }
 
     // B4: ans는 이전 결과 값을 그대로 사용
@@ -125,15 +128,15 @@ mod tests {
 
     #[test]
     fn ans_without_previous_result() {
-        assert_eq!(evl_ex("ans + 1", None), Err("No previous result for 'ans'"));
+        assert_eq!(evl_ex("ans + 1", None), Err(CalcError::NoPreviousResult));
         assert_eq!(evl_ex("1 + 1", Some(5.0)), Ok(2.0));
     }
 
     // B5: 결과가 유한한 수가 아니면 에러
     #[test]
     fn non_finite_result_is_error() {
-        assert_eval_err("10^400");
-        assert_eval_err("-10^400");
-        assert_eval_err("(-8)^(1/3)");
+        assert_eval_err("10^400", CalcError::NonFiniteResult);
+        assert_eval_err("-10^400", CalcError::NonFiniteResult);
+        assert_eval_err("(-8)^(1/3)", CalcError::NonFiniteResult);
     }
 }

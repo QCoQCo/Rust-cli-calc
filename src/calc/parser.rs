@@ -1,3 +1,4 @@
+use super::error::CalcError;
 use super::token::Token;
 
 pub struct Parser {
@@ -12,7 +13,7 @@ impl Parser {
     }
 
     pub fn peek(&self) -> Token {
-        self.tokens.get(self.current).copied().unwrap_or(Token::EOF)
+        self.tokens.get(self.current).copied().unwrap_or(Token::Eof)
     }
 
     fn advance(&mut self) -> Token {
@@ -21,11 +22,11 @@ impl Parser {
             self.current += 1;
             token
         } else {
-            Token::EOF
+            Token::Eof
         }
     }
 
-    pub fn parse_expression(&mut self) -> Result<f64, &'static str> {
+    pub fn parse_expression(&mut self) -> Result<f64, CalcError> {
         let mut result = self.parse_term()?;
 
         loop {
@@ -38,8 +39,8 @@ impl Parser {
                     self.advance();
                     result -= self.parse_term()?;
                 }
-                Token::RParen | Token::EOF => break, // 괄호 안이나 표현식 끝에서 종료
-                _ => return Err("Unexpected token in expression"),
+                Token::RParen | Token::Eof => break, // 괄호 안이나 표현식 끝에서 종료
+                _ => return Err(CalcError::UnexpectedToken),
             }
         }
 
@@ -47,7 +48,7 @@ impl Parser {
     }
 
     // term: unary (('*' | '/' | '%') unary)*
-    fn parse_term(&mut self) -> Result<f64, &'static str> {
+    fn parse_term(&mut self) -> Result<f64, CalcError> {
         let mut result = self.parse_unary()?;
 
         loop {
@@ -60,7 +61,7 @@ impl Parser {
                     self.advance();
                     let divisor = self.parse_unary()?;
                     if divisor == 0.0 {
-                        return Err("Cannot divide by ZERO");
+                        return Err(CalcError::DivisionByZero);
                     }
                     result /= divisor;
                 }
@@ -68,7 +69,7 @@ impl Parser {
                     self.advance();
                     let divisor = self.parse_unary()?;
                     if divisor == 0.0 {
-                        return Err("Cannot divide by ZERO");
+                        return Err(CalcError::DivisionByZero);
                     }
                     result %= divisor;
                 }
@@ -81,7 +82,7 @@ impl Parser {
 
     // unary: ('-' | '+') unary | power
     // 단항 연산자는 '^'보다 우선순위가 낮음: -2^2 = -(2^2)
-    fn parse_unary(&mut self) -> Result<f64, &'static str> {
+    fn parse_unary(&mut self) -> Result<f64, CalcError> {
         match self.peek() {
             Token::Minus => {
                 self.advance(); // consume '-'
@@ -96,7 +97,7 @@ impl Parser {
     }
 
     // power: factor ('^' unary)? (우측 결합, 지수에 단항 연산자 허용: 2^-1)
-    fn parse_power(&mut self) -> Result<f64, &'static str> {
+    fn parse_power(&mut self) -> Result<f64, CalcError> {
         let mut result = self.parse_factor()?;
 
         if matches!(self.peek(), Token::Power) {
@@ -109,7 +110,7 @@ impl Parser {
     }
 
     // factor: number | 'ans' | function '(' expression ')' | '(' expression ')'
-    fn parse_factor(&mut self) -> Result<f64, &'static str> {
+    fn parse_factor(&mut self) -> Result<f64, CalcError> {
         match self.peek() {
             Token::Number(n) => {
                 self.advance();
@@ -117,45 +118,34 @@ impl Parser {
             }
             Token::Ans => {
                 self.advance();
-                self.ans.ok_or("No previous result for 'ans'")
+                self.ans.ok_or(CalcError::NoPreviousResult)
             }
             Token::Sqrt => {
-                // sqrt 함수 처리
                 self.advance(); // consume 'sqrt'
-                match self.peek() {
-                    Token::LParen => {
-                        self.advance(); // consume '('
-                        let arg = self.parse_expression()?;
-                        match self.peek() {
-                            Token::RParen => {
-                                self.advance(); // consume ')'
-                                if arg < 0.0 {
-                                    return Err("Cannot take square root of negative number");
-                                }
-                                Ok(arg.sqrt())
-                            }
-                            Token::EOF => Err("Unclosed parenthesis: expected ')'"),
-                            _ => Err("Expected ')' after sqrt argument"),
-                        }
-                    }
-                    _ => Err("Expected '(' after sqrt"),
+                if !matches!(self.peek(), Token::LParen) {
+                    return Err(CalcError::ExpectedLParenAfterSqrt);
                 }
-            }
-            Token::LParen => {
-                self.advance(); // consume '('
-                let result = self.parse_expression()?;
-                match self.peek() {
-                    Token::RParen => {
-                        self.advance(); // consume ')'
-                        Ok(result)
-                    }
-                    Token::EOF => Err("Unclosed parenthesis: expected ')'"),
-                    _ => Err("Expected ')' after expression"),
+                let arg = self.parse_parenthesized()?;
+                if arg < 0.0 {
+                    return Err(CalcError::NegativeSqrt);
                 }
+                Ok(arg.sqrt())
             }
-            Token::RParen => Err("Unexpected ')' - no matching '('"),
-            Token::EOF => Err("Unexpected end of expression"),
-            _ => Err("Expected number, '-', '+', 'ans', 'sqrt', or '('"),
+            Token::LParen => self.parse_parenthesized(),
+            Token::RParen => Err(CalcError::UnmatchedRParen),
+            Token::Eof => Err(CalcError::UnexpectedEnd),
+            _ => Err(CalcError::ExpectedOperand),
+        }
+    }
+
+    // '(' expression ')'
+    fn parse_parenthesized(&mut self) -> Result<f64, CalcError> {
+        self.advance(); // consume '('
+        let result = self.parse_expression()?;
+        match self.advance() {
+            Token::RParen => Ok(result),
+            Token::Eof => Err(CalcError::UnclosedParen),
+            _ => Err(CalcError::ExpectedRParen),
         }
     }
 }

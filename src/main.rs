@@ -4,6 +4,7 @@ use std::collections::VecDeque;
 
 struct HistoryEntry {
     expression: String,
+    ans: Option<f64>, // 표현식에서 ans를 사용했을 때 그 값
     result: f64,
 }
 
@@ -22,11 +23,11 @@ impl Calculator {
         }
     }
 
-    fn add_to_history(&mut self, expression: String, result: f64) {
+    fn add_to_history(&mut self, expression: String, ans: Option<f64>, result: f64) {
         if self.history.len() >= self.max_history {
             self.history.pop_front();
         }
-        self.history.push_back(HistoryEntry { expression, result });
+        self.history.push_back(HistoryEntry { expression, ans, result });
         self.last_result = Some(result);
     }
 
@@ -37,10 +38,15 @@ impl Calculator {
         }
         println!("\n--- Calculation History ---");
         for (i, entry) in self.history.iter().enumerate() {
-            println!("{}: {} = {}", 
+            let ans_note = entry
+                .ans
+                .map(|ans| format!("  (ans = {})", calc::format_result(ans)))
+                .unwrap_or_default();
+            println!("{}: {} = {}{}", 
                 i + 1, 
                 entry.expression, 
-                calc::format_result(entry.result)
+                calc::format_result(entry.result),
+                ans_note
             );
         }
         println!("---------------------------\n");
@@ -116,7 +122,8 @@ fn main() {
             Ok(result) => {
                 let formatted = calc::format_result(result);
                 println!("Result: {}", formatted);
-                calc.add_to_history(input.to_string(), result);
+                let ans = if calc::uses_ans(input) { calc.last_result } else { None };
+                calc.add_to_history(input.to_string(), ans, result);
             }
             Err(e) => println!("Error: {}", e),
         }

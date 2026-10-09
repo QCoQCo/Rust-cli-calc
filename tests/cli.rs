@@ -115,3 +115,12 @@ fn non_finite_result_does_not_replace_ans() {
     assert!(results[1].starts_with("Error: "), "got {:?}", results[1]);
     assert_eq!(results[2], "Result: 6");
 }
+
+// I7: 히스토리에 ans로 사용된 값을 함께 표시
+#[test]
+fn history_shows_ans_value() {
+    let output = run("10 + 5\nans * 2\n1 + 1\nhistory\nexit\n").expect("calculator did not exit in time");
+    assert!(output.contains("1: 10 + 5 = 15\n"), "{}", output);
+    assert!(output.contains("2: ans * 2 = 30  (ans = 15)\n"), "{}", output);
+    assert!(output.contains("3: 1 + 1 = 2\n"), "{}", output);
+}
